@@ -30,6 +30,7 @@
     z-index: 10;
     padding: 24px;
     text-align: center;
+    overflow-y: auto;
   }
   .hidden { display: none !important; }
 
@@ -106,7 +107,15 @@
       <span>▶</span>
     </button>
     <button class="btn level-card" data-level="2">
-      <span><strong>レベル3</strong><div class="desc">フリーコース（壁なし）</div></span>
+      <span><strong>レベル3</strong><div class="desc">フリーコース（壁なし・ゴール毎回変化）</div></span>
+      <span>▶</span>
+    </button>
+    <button class="btn level-card" data-level="3">
+      <span><strong>レベル4</strong><div class="desc">本格迷路</div></span>
+      <span>▶</span>
+    </button>
+    <button class="btn level-card" data-level="4">
+      <span><strong>レベル5</strong><div class="desc">障害物フリー</div></span>
       <span>▶</span>
     </button>
   </div>
@@ -157,7 +166,7 @@ document.addEventListener('touchmove', e => e.preventDefault(), { passive: false
 
 /* ============ 定数 ============ */
 const CELL = 2;
-const WALL_H = 1.6;
+const WALL_H = 0.8;
 const WALL_T = 0.4;   // 壁の厚み（薄くして通路を広く見せる）
 const BALL_R = 0.55;  // ボール半径（大きめ）
 const GOAL_R = 0.7;
@@ -182,23 +191,112 @@ const LEVEL2_ROWS = [
   "#########",
 ];
 
-function buildFreeLevel(h, w) {
+// 指定セルから到達可能な通路セルをBFSで全列挙する（迷路生成・ゴール配置の妥当性確認に使用）
+function bfsReachable(g, h, w, sr, sc) {
+  const seen = Array.from({ length: h }, () => Array(w).fill(false));
+  seen[sr][sc] = true;
+  const queue = [[sr, sc]];
+  const order = [[sr, sc]];
+  while (queue.length) {
+    const [r, c] = queue.shift();
+    for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      const nr = r + dr, nc = c + dc;
+      if (nr >= 0 && nr < h && nc >= 0 && nc < w && g[nr][nc] !== '#' && !seen[nr][nc]) {
+        seen[nr][nc] = true;
+        queue.push([nr, nc]);
+        order.push([nr, nc]);
+      }
+    }
+  }
+  return order;
+}
+
+function buildFreeLevel(h, w, randomizeGoal) {
   // 外周だけ壁、内部はすべて通路の自由な広場
   const g = Array.from({ length: h }, (_, r) =>
     Array.from({ length: w }, (_, c) =>
       (r === 0 || r === h - 1 || c === 0 || c === w - 1) ? '#' : '.'
     )
   );
-  g[1][1] = 'S';
-  g[h - 2][w - 2] = 'G';
+  const startR = 1, startC = 1;
+  let goalR = h - 2, goalC = w - 2;
+  if (randomizeGoal) {
+    const reachable = bfsReachable(g, h, w, startR, startC);
+    const minDist = Math.floor((h + w) / 3); // スタートに近すぎるゴールを避ける
+    const candidates = reachable.filter(([r, c]) => Math.abs(r - startR) + Math.abs(c - startC) >= minDist);
+    const pool = candidates.length > 0 ? candidates : reachable;
+    [goalR, goalC] = pool[Math.floor(Math.random() * pool.length)];
+  }
+  g[startR][startC] = 'S';
+  g[goalR][goalC] = 'G';
   return g.map(row => row.join(''));
 }
-const LEVEL3_ROWS = buildFreeLevel(9, 13);
+
+// レベル4：本格的な迷路（棒倒し法に近い再帰的バックトラッカーで生成、ゴールは最遠到達点をBFSで探索）
+function buildMazeLevel(h, w) {
+  const g = Array.from({ length: h }, () => Array(w).fill('#'));
+  (function carve(r, c) {
+    g[r][c] = '.';
+    const dirs = [[-2, 0], [2, 0], [0, -2], [0, 2]];
+    for (let i = dirs.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
+    }
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr, nc = c + dc;
+      if (nr > 0 && nr < h - 1 && nc > 0 && nc < w - 1 && g[nr][nc] === '#') {
+        g[r + dr / 2][c + dc / 2] = '.'; // 通路と通路の間の壁を壊してつなげる
+        carve(nr, nc);
+      }
+    }
+  })(1, 1);
+
+  const reachable = bfsReachable(g, h, w, 1, 1);
+  const [goalR, goalC] = reachable[reachable.length - 1]; // BFS到達順の最後＝最も奥のセル
+  g[1][1] = 'S';
+  g[goalR][goalC] = 'G';
+  return g.map(row => row.join(''));
+}
+const LEVEL4_ROWS = buildMazeLevel(13, 13);
+
+// レベル5：障害物入りの広場（ランダムに柱を配置し、スタートからゴールまでの到達可能性をBFSで検証しながら生成）
+function buildObstacleLevel(h, w, obstacleCount) {
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const g = Array.from({ length: h }, (_, r) =>
+      Array.from({ length: w }, (_, c) =>
+        (r === 0 || r === h - 1 || c === 0 || c === w - 1) ? '#' : '.'
+      )
+    );
+    const startR = 1, startC = 1;
+    let placed = 0, tries = 0;
+    while (placed < obstacleCount && tries < obstacleCount * 20) {
+      tries++;
+      const r = 1 + Math.floor(Math.random() * (h - 2));
+      const c = 1 + Math.floor(Math.random() * (w - 2));
+      if (Math.abs(r - startR) + Math.abs(c - startC) < 3) continue;
+      if (g[r][c] === '#') continue;
+      g[r][c] = '#';
+      placed++;
+    }
+    const reachable = bfsReachable(g, h, w, startR, startC);
+    const minDist = Math.floor((h + w) / 3);
+    const candidates = reachable.filter(([r, c]) => Math.abs(r - startR) + Math.abs(c - startC) >= minDist);
+    if (candidates.length === 0) continue; // 条件を満たせなければ作り直す
+    const [goalR, goalC] = candidates[Math.floor(Math.random() * candidates.length)];
+    g[startR][startC] = 'S';
+    g[goalR][goalC] = 'G';
+    return g.map(row => row.join(''));
+  }
+  return buildFreeLevel(h, w, true); // 万一失敗した場合の保険
+}
+const LEVEL5_ROWS = buildObstacleLevel(13, 17, 16);
 
 const LEVELS = [
   { name: 'レベル1：シンプル', rows: LEVEL1_ROWS },
   { name: 'レベル2：ジグザグ', rows: LEVEL2_ROWS },
-  { name: 'レベル3：フリー', rows: LEVEL3_ROWS },
+  { name: 'レベル3：フリー', rows: () => buildFreeLevel(9, 13, true) }, // ゴール位置は毎回ランダム
+  { name: 'レベル4：迷路', rows: LEVEL4_ROWS },
+  { name: 'レベル5：障害物フリー', rows: LEVEL5_ROWS },
 ];
 
 function parseLevel(rows) {
@@ -310,7 +408,8 @@ function clearLevel() {
 
 function buildLevel(index) {
   clearLevel();
-  const { rows } = LEVELS[index];
+  const levelDef = LEVELS[index];
+  const rows = typeof levelDef.rows === 'function' ? levelDef.rows() : levelDef.rows;
   const info = parseLevel(rows);
   const group = new THREE.Group();
   const bodies = [];
