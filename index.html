@@ -174,9 +174,9 @@ const MAX_TILT_G = 6.2;
 const TILT_LIMIT_DEG = 24;
 
 // 傾き操作の向きがまだ実機の感覚とズレる場合は、ここのtrue/falseだけ切り替えれば直る
-let TILT_SWAP_AXES = false;  // 前後と左右がまるごと入れ替わって感じる場合はtrue
+let TILT_SWAP_AXES = true;   // 前後と左右がまるごと入れ替わって感じる場合はtrue
 let TILT_INVERT_X = false;   // 左右だけ逆に感じる場合はtrue
-let TILT_INVERT_Z = false;   // 前後（画面奥・手前）だけ逆に感じる場合はtrue
+let TILT_INVERT_Z = true;    // 前後（画面奥・手前）だけ逆に感じる場合はtrue
 
 /* ============ 障害物パラメータ ============ */
 const OBST = {
