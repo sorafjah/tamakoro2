@@ -111,11 +111,11 @@
       <span>▶</span>
     </button>
     <button class="btn level-card" data-level="3">
-      <span><strong>レベル4</strong><div class="desc">本格迷路</div></span>
+      <span><strong>レベル4</strong><div class="desc">フリー＋動く壁・風ゾーン</div></span>
       <span>▶</span>
     </button>
     <button class="btn level-card" data-level="4">
-      <span><strong>レベル5</strong><div class="desc">障害物フリー</div></span>
+      <span><strong>レベル5</strong><div class="desc">フリー＋跳ね返し・回転羽根</div></span>
       <span>▶</span>
     </button>
   </div>
@@ -172,6 +172,23 @@ const BALL_R = 0.55;  // ボール半径（大きめ）
 const GOAL_R = 0.7;
 const MAX_TILT_G = 6.2;
 const TILT_LIMIT_DEG = 24;
+
+/* ============ 障害物パラメータ ============ */
+const OBST = {
+  slideWallH: 1.2,        // スライド壁の高さ（通常壁0.8より高くして乗り越え防止）
+  slideWallThick: 0.5,
+  slideSpeed: 1.15,       // 往復の角速度(rad/s)
+  windForce: 10,          // 風の力(N)
+  windZoneR: 1.25,        // 風ゾーン半径
+  bounceR: 0.95,          // バウンドパッド半径
+  bounceImpulse: 5.0,     // 跳ね上げ力積（上向き）
+  bounceCarry: 0.2,       // 水平速度の引き継ぎ率
+  bounceCooldown: 0.6,    // 再発動までの秒数
+  bladeArmLen: 1.5,       // 羽根の腕の長さ（中心から先端まで）
+  bladeArmThick: 0.5,     // 羽根の厚み（すり抜け防止のため厚め）
+  bladeArmH: 1.1,
+  bladeOmega: 1.6,        // 羽根の回転角速度(rad/s)
+};
 
 /* ============ レベルデータ ============ */
 // '#'=壁 '.'=通路 'S'=スタート 'G'=ゴール
@@ -232,71 +249,12 @@ function buildFreeLevel(h, w, randomizeGoal) {
   return g.map(row => row.join(''));
 }
 
-// レベル4：本格的な迷路（棒倒し法に近い再帰的バックトラッカーで生成、ゴールは最遠到達点をBFSで探索）
-function buildMazeLevel(h, w) {
-  const g = Array.from({ length: h }, () => Array(w).fill('#'));
-  (function carve(r, c) {
-    g[r][c] = '.';
-    const dirs = [[-2, 0], [2, 0], [0, -2], [0, 2]];
-    for (let i = dirs.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
-    }
-    for (const [dr, dc] of dirs) {
-      const nr = r + dr, nc = c + dc;
-      if (nr > 0 && nr < h - 1 && nc > 0 && nc < w - 1 && g[nr][nc] === '#') {
-        g[r + dr / 2][c + dc / 2] = '.'; // 通路と通路の間の壁を壊してつなげる
-        carve(nr, nc);
-      }
-    }
-  })(1, 1);
-
-  const reachable = bfsReachable(g, h, w, 1, 1);
-  const [goalR, goalC] = reachable[reachable.length - 1]; // BFS到達順の最後＝最も奥のセル
-  g[1][1] = 'S';
-  g[goalR][goalC] = 'G';
-  return g.map(row => row.join(''));
-}
-const LEVEL4_ROWS = buildMazeLevel(13, 13);
-
-// レベル5：障害物入りの広場（ランダムに柱を配置し、スタートからゴールまでの到達可能性をBFSで検証しながら生成）
-function buildObstacleLevel(h, w, obstacleCount) {
-  for (let attempt = 0; attempt < 30; attempt++) {
-    const g = Array.from({ length: h }, (_, r) =>
-      Array.from({ length: w }, (_, c) =>
-        (r === 0 || r === h - 1 || c === 0 || c === w - 1) ? '#' : '.'
-      )
-    );
-    const startR = 1, startC = 1;
-    let placed = 0, tries = 0;
-    while (placed < obstacleCount && tries < obstacleCount * 20) {
-      tries++;
-      const r = 1 + Math.floor(Math.random() * (h - 2));
-      const c = 1 + Math.floor(Math.random() * (w - 2));
-      if (Math.abs(r - startR) + Math.abs(c - startC) < 3) continue;
-      if (g[r][c] === '#') continue;
-      g[r][c] = '#';
-      placed++;
-    }
-    const reachable = bfsReachable(g, h, w, startR, startC);
-    const minDist = Math.floor((h + w) / 3);
-    const candidates = reachable.filter(([r, c]) => Math.abs(r - startR) + Math.abs(c - startC) >= minDist);
-    if (candidates.length === 0) continue; // 条件を満たせなければ作り直す
-    const [goalR, goalC] = candidates[Math.floor(Math.random() * candidates.length)];
-    g[startR][startC] = 'S';
-    g[goalR][goalC] = 'G';
-    return g.map(row => row.join(''));
-  }
-  return buildFreeLevel(h, w, true); // 万一失敗した場合の保険
-}
-const LEVEL5_ROWS = buildObstacleLevel(13, 17, 16);
-
 const LEVELS = [
-  { name: 'レベル1：シンプル', rows: LEVEL1_ROWS },
-  { name: 'レベル2：ジグザグ', rows: LEVEL2_ROWS },
+  { name: 'レベル1：シンプル', rows: LEVEL1_ROWS, cellSize: 2.05 }, // 通路幅 ≈ 玉の1.5倍
+  { name: 'レベル2：ジグザグ', rows: LEVEL2_ROWS, cellSize: 2.6 },  // 通路幅 ≈ 玉の2.0倍
   { name: 'レベル3：フリー', rows: () => buildFreeLevel(9, 13, true) }, // ゴール位置は毎回ランダム
-  { name: 'レベル4：迷路', rows: LEVEL4_ROWS },
-  { name: 'レベル5：障害物フリー', rows: LEVEL5_ROWS },
+  { name: 'レベル4：フリー＋動く壁・風ゾーン', rows: () => buildFreeLevel(9, 13, true) },
+  { name: 'レベル5：フリー＋跳ね返し・回転羽根', rows: () => buildFreeLevel(9, 13, true) },
 ];
 
 function parseLevel(rows) {
@@ -315,10 +273,10 @@ function parseLevel(rows) {
   };
   return { h, w, isWall, start, goal };
 }
-function gridToWorld(r, c, h, w) {
+function gridToWorld(r, c, h, w, cellSize) {
   return {
-    x: (c - (w - 1) / 2) * CELL,
-    z: (r - (h - 1) / 2) * CELL,
+    x: (c - (w - 1) / 2) * cellSize,
+    z: (r - (h - 1) / 2) * cellSize,
   };
 }
 
@@ -363,8 +321,13 @@ world.allowSleep = false;
 
 const groundMat = new CANNON.Material('ground');
 const ballMat = new CANNON.Material('ball');
+const bladeMat = new CANNON.Material('blade');
 world.addContactMaterial(new CANNON.ContactMaterial(groundMat, ballMat, {
   friction: 0.45, restitution: 0.15,
+}));
+// 羽根に当たったときは弾かれる感触を強めにする
+world.addContactMaterial(new CANNON.ContactMaterial(bladeMat, ballMat, {
+  friction: 0.1, restitution: 0.45,
 }));
 
 /* ============ ボール ============ */
@@ -382,6 +345,9 @@ const ballBody = new CANNON.Body({
   angularDamping: 0.2,
 });
 world.addBody(ballBody);
+// 高速で移動したときに薄い羽根や壁をすり抜けないよう連続衝突判定を有効化
+ballBody.ccdSpeedThreshold = 3;
+ballBody.ccdSweptSphereRadius = BALL_R * 0.9;
 
 /* ============ ゴールマーカー ============ */
 const goalGeo = new THREE.TorusGeometry(GOAL_R, 0.08, 12, 32);
@@ -393,6 +359,7 @@ scene.add(goalMesh);
 /* ============ レベル構築 ============ */
 let currentLevelGroup = null;
 let currentLevelInfo = null;
+let activeObstacles = [];   // 現在のレベルの動く障害物（毎フレームupdateされる）
 let goalWorld = { x: 0, z: 0 };
 let startWorld = { x: 0, z: 0 };
 
@@ -404,18 +371,20 @@ function clearLevel() {
   if (currentLevelInfo) {
     currentLevelInfo.bodies.forEach(b => world.removeBody(b));
   }
+  activeObstacles = []; // 前レベルの障害物のupdateが残らないよう必ずクリア
 }
 
 function buildLevel(index) {
   clearLevel();
   const levelDef = LEVELS[index];
   const rows = typeof levelDef.rows === 'function' ? levelDef.rows() : levelDef.rows;
+  const cellSize = levelDef.cellSize || CELL;
   const info = parseLevel(rows);
   const group = new THREE.Group();
   const bodies = [];
 
   // 床
-  const floorW = info.w * CELL, floorH = info.h * CELL;
+  const floorW = info.w * cellSize, floorH = info.h * cellSize;
   const floorGeo = new THREE.BoxGeometry(floorW, 0.4, floorH);
   const floorMat = new THREE.MeshStandardMaterial({ color: 0x2f7d5b, roughness: 0.9 });
   const floorMesh = new THREE.Mesh(floorGeo, floorMat);
@@ -434,12 +403,12 @@ function buildLevel(index) {
   for (let r = 0; r < info.h; r++) {
     for (let c = 0; c < info.w; c++) {
       if (rows[r][c] === '#') continue; // 通路セル側からのみ境界を判定する
-      const { x, z } = gridToWorld(r, c, info.h, info.w);
+      const { x, z } = gridToWorld(r, c, info.h, info.w, cellSize);
       // 角に隙間ができないよう、境界壁の長さをWALL_T分だけ延長して重ねる
-      if (info.isWall(r - 1, c)) wallSegs.push({ x, z: z - CELL / 2, lenX: CELL + WALL_T, lenZ: WALL_T }); // 北
-      if (info.isWall(r + 1, c)) wallSegs.push({ x, z: z + CELL / 2, lenX: CELL + WALL_T, lenZ: WALL_T }); // 南
-      if (info.isWall(r, c - 1)) wallSegs.push({ x: x - CELL / 2, z, lenX: WALL_T, lenZ: CELL + WALL_T }); // 西
-      if (info.isWall(r, c + 1)) wallSegs.push({ x: x + CELL / 2, z, lenX: WALL_T, lenZ: CELL + WALL_T }); // 東
+      if (info.isWall(r - 1, c)) wallSegs.push({ x, z: z - cellSize / 2, lenX: cellSize + WALL_T, lenZ: WALL_T }); // 北
+      if (info.isWall(r + 1, c)) wallSegs.push({ x, z: z + cellSize / 2, lenX: cellSize + WALL_T, lenZ: WALL_T }); // 南
+      if (info.isWall(r, c - 1)) wallSegs.push({ x: x - cellSize / 2, z, lenX: WALL_T, lenZ: cellSize + WALL_T }); // 西
+      if (info.isWall(r, c + 1)) wallSegs.push({ x: x + cellSize / 2, z, lenX: WALL_T, lenZ: cellSize + WALL_T }); // 東
     }
   }
   if (wallSegs.length > 0) {
@@ -464,12 +433,15 @@ function buildLevel(index) {
     group.add(wallMesh);
   }
 
+  // レベル4・5に動く障害物を配置する
+  buildObstacles(index, rows, info, cellSize, group, bodies);
+
   scene.add(group);
   currentLevelGroup = group;
-  currentLevelInfo = { ...info, bodies };
+  currentLevelInfo = { ...info, bodies, cellSize };
 
-  startWorld = gridToWorld(info.start[0], info.start[1], info.h, info.w);
-  goalWorld = gridToWorld(info.goal[0], info.goal[1], info.h, info.w);
+  startWorld = gridToWorld(info.start[0], info.start[1], info.h, info.w, cellSize);
+  goalWorld = gridToWorld(info.goal[0], info.goal[1], info.h, info.w, cellSize);
   goalMesh.position.set(goalWorld.x, 0.05, goalWorld.z);
 
   ballBody.position.set(startWorld.x, BALL_R + 0.05, startWorld.z);
@@ -481,7 +453,233 @@ function buildLevel(index) {
   camOffsetDist = Math.max(8, Math.max(floorW, floorH) * 0.55);
 }
 
-/* ============ 傾き制御 ============ */
+/* ============ 障害物システム ============ */
+// スタート・ゴールと重ならない配置候補を、互いに一定距離あけて貪欲に選ぶ
+function pickSpread(cells, count, minCellDist, avoid) {
+  const chosen = [];
+  const shuffled = cells.slice().sort(() => Math.random() - 0.5);
+  for (const cell of shuffled) {
+    if (chosen.length >= count) break;
+    const okChosen = chosen.every(([r, c]) => Math.abs(r - cell[0]) + Math.abs(c - cell[1]) >= minCellDist);
+    const okAvoid = avoid.every(([r, c]) => Math.abs(r - cell[0]) + Math.abs(c - cell[1]) >= 2);
+    if (okChosen && okAvoid) chosen.push(cell);
+  }
+  return chosen;
+}
+
+function buildObstacles(index, rows, info, cellSize, group, bodies) {
+  activeObstacles = [];
+  if (index !== 3 && index !== 4) return; // レベル1〜3には仕掛けを置かない
+  const [sr, sc] = info.start;
+  const [gr, gc] = info.goal;
+  const avoid = [[sr, sc], [gr, gc]];
+  const P = (r, c) => gridToWorld(r, c, info.h, info.w, cellSize);
+  const randAxis = () => (Math.random() < 0.5 ? 'h' : 'v'); // 壁なし広場なので通路の向きに縛られずランダムでよい
+
+  // レベル3と同じ「壁なし広場」がベースなので、外周際を除いた内側の通路セルはすべて配置候補になる
+  const passage = [];
+  for (let r = 1; r < info.h - 1; r++)
+    for (let c = 1; c < info.w - 1; c++)
+      if (rows[r][c] === '.') passage.push([r, c]);
+
+  const notNear = (r, c, d) => avoid.every(([ar, ac]) => Math.abs(ar - r) + Math.abs(ac - c) >= d);
+  // 外周のすぐ内側は場外脱出やスライド壁のはみ出しを避けるため除外
+  const openCells = passage.filter(([r, c]) =>
+    r >= 2 && r <= info.h - 3 && c >= 2 && c <= info.w - 3 && notNear(r, c, 3));
+
+  if (index === 3) {
+    // レベル4：フリー広場＋往復スライド壁・風ゾーン
+    const walls = pickSpread(openCells, 3, 4, avoid);
+    const rest = openCells.filter(cell => !walls.some(w => w[0] === cell[0] && w[1] === cell[1]));
+    const winds = pickSpread(rest, 3, 3, avoid);
+    for (const [r, c] of walls) {
+      const { x, z } = P(r, c);
+      addSlideWall(x, z, randAxis(), cellSize, group, bodies);
+    }
+    for (const [r, c] of winds) {
+      const { x, z } = P(r, c);
+      addWindZone(x, z, randAxis(), group);
+    }
+  } else if (index === 4) {
+    // レベル5：フリー広場＋バウンドパッド・回転羽根（振り回すスペースが要るので開けたセルに置く）
+    const blades = pickSpread(openCells, 3, 4, avoid);
+    const rest = openCells.filter(cell => !blades.some(b => b[0] === cell[0] && b[1] === cell[1]));
+    const pads = pickSpread(rest, 4, 3, avoid);
+    for (const [r, c] of blades) {
+      const { x, z } = P(r, c);
+      addBlade(x, z, group, bodies);
+    }
+    for (const [r, c] of pads) {
+      const { x, z } = P(r, c);
+      addBouncePad(x, z, group);
+    }
+  }
+}
+
+// --- 往復スライド壁 ---
+function addSlideWall(x, z, axis, cellSize, group, bodies) {
+  const along = axis === 'h' ? { x: 1, z: 0 } : { x: 0, z: 1 };
+  const crossLen = cellSize * 0.86; // 通路を横切ってふさぐ長さ
+  const thick = OBST.slideWallThick;
+  const h = OBST.slideWallH;
+  const lenX = axis === 'h' ? thick : crossLen;
+  const lenZ = axis === 'h' ? crossLen : thick;
+
+  const geo = new THREE.BoxGeometry(lenX, h, lenZ);
+  const mat = new THREE.MeshStandardMaterial({ color: 0xff8a3d, roughness: 0.6, metalness: 0.1 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  mesh.position.set(x, h / 2, z);
+  group.add(mesh);
+
+  const body = new CANNON.Body({ mass: 0, type: CANNON.Body.KINEMATIC, material: groundMat });
+  body.addShape(new CANNON.Box(new CANNON.Vec3(lenX / 2, h / 2, lenZ / 2)));
+  body.position.set(x, h / 2, z);
+  world.addBody(body);
+  bodies.push(body);
+
+  const amp = cellSize * 0.55;
+  const omega = OBST.slideSpeed;
+  const phase0 = Math.random() * Math.PI * 2;
+  const ob = {
+    type: 'slideWall', x, z, t: 0,
+    update(dt) {
+      // 時間はdtで積算するのでフレームレートに依存しない
+      ob.t += dt;
+      const ph = ob.t * omega + phase0;
+      const off = Math.sin(ph) * amp;
+      const vel = Math.cos(ph) * amp * omega; // 位置の微分＝速度（ボールを押す力の元）
+      body.position.set(x + along.x * off, h / 2, z + along.z * off);
+      body.velocity.set(along.x * vel, 0, along.z * vel);
+      mesh.position.copy(body.position);
+    },
+  };
+  activeObstacles.push(ob);
+}
+
+// --- 風ゾーン ---
+function addWindZone(x, z, axis, group) {
+  const dir = axis === 'h'
+    ? { x: Math.random() < 0.5 ? 1 : -1, z: 0 }
+    : { x: 0, z: Math.random() < 0.5 ? 1 : -1 };
+  const r = OBST.windZoneR;
+
+  const disc = new THREE.Mesh(
+    new THREE.CircleGeometry(r, 32),
+    new THREE.MeshBasicMaterial({ color: 0x66ccff, transparent: true, opacity: 0.28, side: THREE.DoubleSide })
+  );
+  disc.rotation.x = -Math.PI / 2;
+  disc.position.set(x, 0.03, z);
+  group.add(disc);
+
+  // 風向きを示す細いバー
+  const bar = new THREE.Mesh(
+    new THREE.BoxGeometry(0.14, 0.02, r * 1.3),
+    new THREE.MeshBasicMaterial({ color: 0x2aa0e0, transparent: true, opacity: 0.7 })
+  );
+  bar.position.set(x, 0.05, z);
+  bar.rotation.y = Math.atan2(dir.x, dir.z);
+  group.add(bar);
+
+  const force = OBST.windForce;
+  const ob = {
+    type: 'windZone', x, z, t: 0,
+    update(dt) {
+      ob.t += dt;
+      disc.material.opacity = 0.22 + Math.sin(ob.t * 4) * 0.08; // ゆらぎ演出
+      if (gameState !== 'playing') return;
+      const dx = ballBody.position.x - x, dz = ballBody.position.z - z;
+      if (dx * dx + dz * dz < r * r) {
+        // 相対点(0,0,0)＝重心に力を加える（ワールド座標を渡すと余計な回転が生じるため）
+        ballBody.applyForce(new CANNON.Vec3(dir.x * force, 0, dir.z * force), new CANNON.Vec3(0, 0, 0));
+      }
+    },
+  };
+  activeObstacles.push(ob);
+}
+
+// --- バウンドパッド ---
+function addBouncePad(x, z, group) {
+  const r = OBST.bounceR;
+  const mesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(r, r, 0.12, 24),
+    new THREE.MeshStandardMaterial({ color: 0x39d98a, emissive: 0x1f7d54, emissiveIntensity: 0.5, roughness: 0.4 })
+  );
+  mesh.position.set(x, 0.06, z);
+  mesh.receiveShadow = true;
+  group.add(mesh);
+
+  const ob = {
+    type: 'bounce', x, z, cool: 0, pulse: 0,
+    update(dt) {
+      if (ob.cool > 0) ob.cool -= dt;
+      if (ob.pulse > 0) ob.pulse -= dt * 3;
+      const p = Math.max(0, ob.pulse);
+      const s = 1 + p * 0.4;
+      mesh.scale.set(s, 1, s);
+      mesh.material.emissiveIntensity = 0.5 + p * 0.8;
+      if (gameState !== 'playing') return;
+      const dx = ballBody.position.x - x, dz = ballBody.position.z - z;
+      const near = dx * dx + dz * dz < r * r;
+      const low = ballBody.position.y < BALL_R + 0.35; // 接地しているときだけ発動
+      if (near && low && ob.cool <= 0) {
+        const v = ballBody.velocity;
+        ballBody.applyImpulse(
+          new CANNON.Vec3(v.x * OBST.bounceCarry, OBST.bounceImpulse, v.z * OBST.bounceCarry),
+          new CANNON.Vec3(0, 0, 0)
+        );
+        ob.cool = OBST.bounceCooldown;
+        ob.pulse = 1;
+      }
+    },
+  };
+  activeObstacles.push(ob);
+}
+
+// --- 回転する羽根（風車） ---
+function addBlade(x, z, group, bodies) {
+  const armLen = OBST.bladeArmLen, armThick = OBST.bladeArmThick, armH = OBST.bladeArmH;
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+
+  const steel = new THREE.MeshStandardMaterial({ color: 0x8a94a6, metalness: 0.6, roughness: 0.4 });
+  const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, armH, 16), steel);
+  pillar.position.y = armH / 2; pillar.castShadow = true;
+  g.add(pillar);
+
+  const armMat = new THREE.MeshStandardMaterial({ color: 0xe8443b, metalness: 0.3, roughness: 0.5 });
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(armLen * 2, armH * 0.8, armThick), armMat);
+  arm.position.y = armH * 0.5; arm.castShadow = true;
+  g.add(arm);
+  group.add(g);
+
+  const body = new CANNON.Body({ mass: 0, type: CANNON.Body.KINEMATIC, material: bladeMat });
+  body.addShape(new CANNON.Box(new CANNON.Vec3(armLen, armH * 0.4, armThick / 2)));
+  body.position.set(x, armH * 0.5, z);
+  world.addBody(body);
+  bodies.push(body);
+
+  const omega = OBST.bladeOmega * (Math.random() < 0.5 ? 1 : -1); // 回転方向はランダム
+  const ang0 = Math.random() * Math.PI * 2;
+  const Yaxis = new CANNON.Vec3(0, 1, 0);
+  const ob = {
+    type: 'blade', x, z, t: 0,
+    update(dt) {
+      ob.t += dt;
+      const ang = ob.t * omega + ang0;
+      body.quaternion.setFromAxisAngle(Yaxis, ang);
+      body.angularVelocity.set(0, omega, 0); // 接触時にボールを弾くための角速度
+      g.rotation.y = ang;
+    },
+  };
+  activeObstacles.push(ob);
+}
+
+function updateObstacles(dt) {
+  for (const ob of activeObstacles) ob.update(dt);
+}
+
+
 let currentBeta = 0, currentGamma = 0;
 let hasOrientationData = false;
 let baselineBeta = 0, baselineGamma = 0;
@@ -655,6 +853,7 @@ function animate(now) {
   if (gameState === 'playing') {
     elapsedTime += dt;
     updateTilt();
+    updateObstacles(dt); // 動く壁・羽根の位置更新と、風・跳ね返しの力はstep前に反映する
     world.step(1 / 60, dt, 5);
     ballMesh.position.copy(ballBody.position);
     ballMesh.quaternion.copy(ballBody.quaternion);
@@ -662,6 +861,7 @@ function animate(now) {
     checkGoal();
     hudTime.textContent = fmt(elapsedTime);
   } else if (gameState === 'countdown') {
+    updateObstacles(dt); // カウントダウン中も障害物は動いて見える（力はplaying時のみ作用）
     updateCamera(dt);
   }
 
@@ -679,6 +879,7 @@ window.__G = {
     return { x: ballBody.position.x, y: ballBody.position.y, z: ballBody.position.z };
   },
   get goalPos() { return { x: goalWorld.x, z: goalWorld.z }; },
+  get obstacleCount() { return activeObstacles.length; },
   api: {
     startLevel: (i) => startLevel(i),
     retry: () => retryLevel(),
@@ -686,6 +887,8 @@ window.__G = {
     // 実機の傾きセンサーを使わず、テストからボールの移動方向を直接注入する
     setTilt: (x, z) => { manualTilt = { x, z }; },
     clearTilt: () => { manualTilt = null; },
+    // 現在のレベルの障害物一覧（種類と位置）を返す
+    listObstacles: () => activeObstacles.map(o => ({ type: o.type, position: { x: o.x, z: o.z } })),
   },
 };
 </script>
