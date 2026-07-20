@@ -180,18 +180,19 @@ let TILT_INVERT_Z = true;    // 前後（画面奥・手前）だけ逆に感じ
 
 /* ============ 障害物パラメータ ============ */
 const OBST = {
-  slideWallH: 1.2,        // スライド壁の高さ（通常壁0.8より高くして乗り越え防止）
-  slideWallThick: 0.5,
+  slideWallH: 2.4,        // スライド壁の高さ（通常壁0.8より高くして乗り越え防止）※サイズ2倍
+  slideWallThick: 1.0,    // ※サイズ2倍
+  slideWallLen: 5.0,      // 通路を横切ってふさぐ長さ（太さではなく長さ側）
   slideSpeed: 1.15,       // 往復の角速度(rad/s)
   windForce: 10,          // 風の力(N)
-  windZoneR: 1.25,        // 風ゾーン半径
-  bounceR: 0.95,          // バウンドパッド半径
+  windZoneR: 2.5,         // 風ゾーン半径 ※サイズ2倍
+  bounceR: 1.9,           // バウンドパッド半径 ※サイズ2倍
   bounceImpulse: 5.0,     // 跳ね上げ力積（上向き）
   bounceCarry: 0.2,       // 水平速度の引き継ぎ率
   bounceCooldown: 0.6,    // 再発動までの秒数
-  bladeArmLen: 1.5,       // 羽根の腕の長さ（中心から先端まで）
-  bladeArmThick: 0.5,     // 羽根の厚み（すり抜け防止のため厚め）
-  bladeArmH: 1.1,
+  bladeArmLen: 3.0,       // 羽根の腕の長さ（中心から先端まで）※サイズ2倍
+  bladeArmThick: 1.0,     // 羽根の厚み（すり抜け防止のため厚め）※サイズ2倍
+  bladeArmH: 2.2,         // ※サイズ2倍
   bladeOmega: 1.6,        // 羽根の回転角速度(rad/s)
 };
 
@@ -524,7 +525,7 @@ function buildObstacles(index, rows, info, cellSize, group, bodies) {
 // --- 往復スライド壁 ---
 function addSlideWall(x, z, axis, cellSize, group, bodies) {
   const along = axis === 'h' ? { x: 1, z: 0 } : { x: 0, z: 1 };
-  const crossLen = cellSize * 0.86; // 通路を横切ってふさぐ長さ
+  const crossLen = OBST.slideWallLen; // 通路を横切ってふさぐ長さ
   const thick = OBST.slideWallThick;
   const h = OBST.slideWallH;
   const lenX = axis === 'h' ? thick : crossLen;
