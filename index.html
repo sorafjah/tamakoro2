@@ -173,6 +173,11 @@ const GOAL_R = 0.7;
 const MAX_TILT_G = 6.2;
 const TILT_LIMIT_DEG = 24;
 
+// 傾き操作の向きがまだ実機の感覚とズレる場合は、ここのtrue/falseだけ切り替えれば直る
+let TILT_SWAP_AXES = false;  // 前後と左右がまるごと入れ替わって感じる場合はtrue
+let TILT_INVERT_X = false;   // 左右だけ逆に感じる場合はtrue
+let TILT_INVERT_Z = false;   // 前後（画面奥・手前）だけ逆に感じる場合はtrue
+
 /* ============ 障害物パラメータ ============ */
 const OBST = {
   slideWallH: 1.2,        // スライド壁の高さ（通常壁0.8より高くして乗り越え防止）
@@ -734,12 +739,29 @@ function updateTilt() {
   if (manualTilt) {
     x = manualTilt.x; z = manualTilt.z;
   } else if (hasOrientationData) {
-    const b = clamp(currentBeta - baselineBeta, -TILT_LIMIT_DEG, TILT_LIMIT_DEG) / TILT_LIMIT_DEG;
-    const g = clamp(currentGamma - baselineGamma, -TILT_LIMIT_DEG, TILT_LIMIT_DEG) / TILT_LIMIT_DEG;
-    const rad = -screenAngle * Math.PI / 180;
-    const cos = Math.cos(rad), sin = Math.sin(rad);
-    x = g * cos - b * sin;
-    z = g * sin + b * cos;
+    const rawBeta = currentBeta - baselineBeta;   // 前後（縦向き基準の物理軸）
+    const rawGamma = currentGamma - baselineGamma; // 左右（縦向き基準の物理軸）
+
+    // 画面の向き（angle）ごとに、機体の物理軸(beta/gamma)を「画面の右方向」「画面の奥方向」に変換する。
+    // iPadを横向きで使うと物理軸と画面の向きがずれるため、向きに応じてbeta/gammaの役割を切り替える必要がある。
+    const angle = ((Math.round(screenAngle) % 360) + 360) % 360;
+    let right, forward;
+    switch (angle) {
+      case 90:  right = -rawBeta;  forward = rawGamma;  break;
+      case 180: right = -rawGamma; forward = -rawBeta;  break;
+      case 270: right = rawBeta;   forward = -rawGamma; break;
+      default:  right = rawGamma;  forward = rawBeta;   // 0（縦向き）
+    }
+
+    let nx = clamp(right, -TILT_LIMIT_DEG, TILT_LIMIT_DEG) / TILT_LIMIT_DEG;
+    let nz = clamp(forward, -TILT_LIMIT_DEG, TILT_LIMIT_DEG) / TILT_LIMIT_DEG;
+
+    // ここから先は微調整用。上下・左右がまだ逆に感じる場合はこの3つのtrue/falseを切り替えるだけで直る。
+    if (TILT_SWAP_AXES) { const t = nx; nx = nz; nz = t; }
+    if (TILT_INVERT_X) nx = -nx;
+    if (TILT_INVERT_Z) nz = -nz;
+
+    x = nx; z = nz;
   } else {
     const k = keyboardTilt();
     x = k.x; z = k.z;
@@ -889,6 +911,15 @@ window.__G = {
     clearTilt: () => { manualTilt = null; },
     // 現在のレベルの障害物一覧（種類と位置）を返す
     listObstacles: () => activeObstacles.map(o => ({ type: o.type, position: { x: o.x, z: o.z } })),
+    // 実機で上下・左右が逆に感じる場合、コンソールから即座に調整できる
+    // 例）__G.api.setTiltCalibration({ swap: true })
+    setTiltCalibration: ({ swap, invertX, invertZ } = {}) => {
+      if (swap !== undefined) TILT_SWAP_AXES = swap;
+      if (invertX !== undefined) TILT_INVERT_X = invertX;
+      if (invertZ !== undefined) TILT_INVERT_Z = invertZ;
+    },
+    getTiltCalibration: () => ({ swap: TILT_SWAP_AXES, invertX: TILT_INVERT_X, invertZ: TILT_INVERT_Z }),
+    getRawTilt: () => ({ beta: currentBeta, gamma: currentGamma, screenAngle }),
   },
 };
 </script>
