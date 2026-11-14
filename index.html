@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<!-- ホーム画面に追加して開くと、アドレスバーなしの全画面で表示される -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="３D玉ころがし２">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -87,6 +91,13 @@
   #permWarn { font-size: 13px; color: #ffcf6b; max-width: 320px; margin-top: 18px; }
 
   @media print { .screen, #hud { display: none !important; } }
+
+/* ==== スマホ用パネル調整：スマホ（画面が低いとき）だけに効く。iPadには影響しない ==== */
+@media (orientation:landscape) and (max-height:500px), (orientation:portrait) and (max-height:700px){
+  #menuScreen{justify-content:flex-start;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  #menuScreen > :first-child{margin-top:auto}
+  #menuScreen > :last-child{margin-bottom:auto}
+}
 </style>
 </head>
 <body>
